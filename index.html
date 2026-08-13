@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
     
     <!-- External CSS -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="../assets/style.css">
     
     <style>
         /* Page-specific styles */
@@ -600,11 +600,39 @@
             }
         }
     </style>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBf8Hvh6y-brtQcHRo6DesVj4i2SrgdnMg",
+            authDomain: "osaquiz.firebaseapp.com",
+            databaseURL: "https://osaquiz-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "osaquiz",
+            storageBucket: "osaquiz.firebasestorage.app",
+            messagingSenderId: "427866798589",
+            appId: "1:427866798589:web:2183a19405707fa6cc8194"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+    </script>
 </head>
 <body>
-    <a href="index.html" class="home-btn" aria-label="Go to home page">
+    <a href="dashboard.html" class="home-btn" aria-label="Go to home page">
         <span class="home-icon" aria-hidden="true">⌂</span>
     </a>
+
+    <!-- Sign-in control -->
+    <div id="authBox" style="position:fixed; top:10px; right:10px; z-index:1000;">
+        <div id="loginForm" style="display:flex; gap:6px; align-items:center;">
+            <input id="loginEmail" type="email" placeholder="Email" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
+            <input id="loginPass" type="password" placeholder="Password" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
+            <button onclick="doLogin()" class="reset-button" style="width:auto; height:auto; border-radius:8px; padding:8px 14px; font-size:0.9rem;">Sign In</button>
+        </div>
+        <button id="logoutBtn" onclick="doLogout()" class="reset-button" style="display:none; width:auto; height:auto; border-radius:8px; padding:8px 14px; font-size:0.9rem;">Sign Out</button>
+    </div>
     <div class="bg-animation">
         <div class="quiz-icon">🧠</div>
         <div class="quiz-icon">❓</div>
@@ -619,7 +647,7 @@
             <div class="header-top">
                 <div class="left-section">
                     <div class="school-logo">
-                        <img src="school_logo.png" width="100" height="100" alt="Om Shanti Academy Logo" />
+                        <img src="assets/school_logo.png" width="100" height="100" alt="Om Shanti Academy Logo" />
                     </div>
                     <div class="school-info">
                         <h1>OM SHANTI ACADEMY</h1>
@@ -751,11 +779,42 @@
             { id: 4, name: 'Rapid Fire', max: 20 }
         ];
 
+        // Auth
+        let isEditor = false;
+
+        function doLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const pass = document.getElementById('loginPass').value;
+            firebase.auth().signInWithEmailAndPassword(email, pass)
+                .catch(err => alert('Login failed: ' + err.message));
+        }
+
+        function doLogout() {
+            firebase.auth().signOut();
+        }
+
+        firebase.auth().onAuthStateChanged(user => {
+            isEditor = !!user;
+            document.getElementById('loginForm').style.display = user ? 'none' : 'flex';
+            document.getElementById('logoutBtn').style.display = user ? 'block' : 'none';
+            render();
+        });
+
         // Initialize
-        function init() {
-            loadData();
+        async function init() {
+            await loadData();
             render();
             initBackgroundAnimation();
+
+            // Live sync: reflect changes made from other devices in real time
+            db.ref('quizData').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+                groups = data.groups || groups;
+                rounds = data.rounds || rounds;
+                scores = data.scores || scores;
+                render();
+            });
         }
 
         function initBackgroundAnimation() {
@@ -766,7 +825,22 @@
             });
         }
 
-        function loadData() {
+        async function loadData() {
+            try {
+                const snapshot = await db.ref('quizData').once('value');
+                const data = snapshot.val();
+                if (data) {
+                    groups = data.groups || groups;
+                    rounds = data.rounds || [...defaultRounds];
+                    scores = data.scores || {};
+                    if (!data.rounds) initScores();
+                    return;
+                }
+            } catch (e) {
+                console.warn('Firebase unavailable, falling back to localStorage', e);
+            }
+
+            // Fallback: local cache (offline, or first run before any Firebase data exists)
             const savedGroups = localStorage.getItem('groups');
             const savedRounds = localStorage.getItem('rounds');
             const savedScores = localStorage.getItem('scores');
@@ -795,6 +869,8 @@
             localStorage.setItem('groups', JSON.stringify(groups));
             localStorage.setItem('rounds', JSON.stringify(rounds));
             localStorage.setItem('scores', JSON.stringify(scores));
+            db.ref('quizData').set({ groups, rounds, scores })
+                .catch(e => console.error('Firebase save failed', e));
         }
 
         // Navigation
@@ -810,6 +886,7 @@
 
         // Scoring
         function updateScore(group, roundId, delta) {
+            if (!isEditor) return alert('Sign in to edit scores.');
             if (!scores[group]) scores[group] = {};
             if (!scores[group][roundId]) scores[group][roundId] = 0;
             
@@ -834,6 +911,7 @@
 
         // Round Management
         function addRound() {
+            if (!isEditor) return alert('Sign in to edit.');
             const name = document.getElementById('roundName').value.trim();
             const max = parseInt(document.getElementById('roundMax').value);
             
@@ -854,6 +932,7 @@
         }
 
         function deleteRound(id) {
+            if (!isEditor) return alert('Sign in to edit.');
             if (!confirm('Delete this round? All scores will be lost.')) return;
             
             rounds = rounds.filter(r => r.id !== id);
@@ -867,6 +946,7 @@
 
         // Group Management
         function updateGroup(index, newName) {
+            if (!isEditor) return alert('Sign in to edit.');
             const name = newName.trim();
             if (!name) return alert('Group name cannot be empty');
             
@@ -885,6 +965,7 @@
 
         // Reset
         function resetSystem() {
+            if (!isEditor) return alert('Sign in to edit.');
             const confirm1 = confirm('🚨 RESET ALL DATA?\n\n⚠️ This will permanently delete:\n• All scores\n• All custom rounds\n• All group names\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?');
             if (!confirm1) return;
             
@@ -892,7 +973,8 @@
             if (!confirm2) return;
             
             localStorage.clear();
-            location.reload();
+            db.ref('quizData').remove()
+                .finally(() => location.reload());
         }
 
         // Rendering
@@ -1001,6 +1083,6 @@
         // Start app
         init();
     </script>
-    <script src="common-header.js"></script>
+    <script src="../overall-scripts/common-header.js"></script>
 </body>
 </html>
