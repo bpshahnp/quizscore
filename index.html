@@ -599,6 +599,97 @@
                 padding: 10px 15px;
             }
         }
+
+        /* Sign-in trigger button (top-right, shown when logged out) */
+        .signin-trigger-btn {
+            background: linear-gradient(135deg, var(--primary-blue), #2c5282);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(49, 130, 206, 0.4);
+            font-family: 'Poppins', sans-serif;
+            transition: transform 0.2s ease;
+        }
+
+        .signin-trigger-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Sign-in modal overlay */
+        .signin-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(20, 30, 48, 0.55);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .signin-overlay.show {
+            display: flex;
+        }
+
+        .signin-modal {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 16px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 340px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            position: relative;
+            animation: fadeIn 0.25s ease;
+        }
+
+        .signin-modal-close {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-light);
+            padding: 4px 8px;
+        }
+
+        .signin-modal-close:hover {
+            color: var(--text-dark);
+        }
+
+        .signin-modal h3 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+            color: var(--text-dark);
+            text-align: center;
+        }
+
+        .signin-modal .form-input {
+            margin-bottom: 1rem;
+        }
+
+        .signin-modal .btn-primary {
+            width: 100%;
+            padding: 0.85rem;
+        }
+
+        @media (max-width: 480px) {
+            .signin-modal {
+                padding: 1.5rem;
+            }
+        }
     </style>
 
     <!-- Firebase SDK -->
@@ -626,12 +717,21 @@
 
     <!-- Sign-in control -->
     <div id="authBox" style="position:fixed; top:10px; right:10px; z-index:1000;">
-        <div id="loginForm" style="display:flex; gap:6px; align-items:center;">
-            <input id="loginEmail" type="email" placeholder="Email" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
-            <input id="loginPass" type="password" placeholder="Password" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
-            <button onclick="doLogin()" class="reset-button" style="width:auto; height:auto; border-radius:8px; padding:8px 14px; font-size:0.9rem;">Sign In</button>
-        </div>
+        <button id="loginTriggerBtn" onclick="openLoginModal()" class="signin-trigger-btn">Sign In</button>
         <button id="logoutBtn" onclick="doLogout()" class="reset-button" style="display:none; width:auto; height:auto; border-radius:8px; padding:8px 14px; font-size:0.9rem;">Sign Out</button>
+    </div>
+
+    <!-- Sign-in modal (shown over blurred background) -->
+    <div id="loginOverlay" class="signin-overlay" onclick="if(event.target===this) closeLoginModal()">
+        <div class="signin-modal">
+            <button type="button" class="signin-modal-close" onclick="closeLoginModal()" aria-label="Close">&times;</button>
+            <h3>Sign In</h3>
+            <div id="loginForm">
+                <input id="loginEmail" type="email" placeholder="Email" class="form-input" autocomplete="username">
+                <input id="loginPass" type="password" placeholder="Password" class="form-input" autocomplete="current-password">
+                <button onclick="doLogin()" class="btn-primary">Sign In</button>
+            </div>
+        </div>
     </div>
     <div class="bg-animation">
         <div class="quiz-icon">🧠</div>
@@ -782,10 +882,20 @@
         // Auth
         let isEditor = false;
 
+        function openLoginModal() {
+            document.getElementById('loginOverlay').classList.add('show');
+            document.getElementById('loginEmail').focus();
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginOverlay').classList.remove('show');
+        }
+
         function doLogin() {
             const email = document.getElementById('loginEmail').value;
             const pass = document.getElementById('loginPass').value;
             firebase.auth().signInWithEmailAndPassword(email, pass)
+                .then(() => closeLoginModal())
                 .catch(err => alert('Login failed: ' + err.message));
         }
 
@@ -793,10 +903,23 @@
             firebase.auth().signOut();
         }
 
+        // Allow pressing Enter inside the modal to submit
+        document.addEventListener('DOMContentLoaded', () => {
+            ['loginEmail', 'loginPass'].forEach(id => {
+                document.getElementById(id).addEventListener('keydown', e => {
+                    if (e.key === 'Enter') doLogin();
+                });
+            });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape') closeLoginModal();
+            });
+        });
+
         firebase.auth().onAuthStateChanged(user => {
             isEditor = !!user;
-            document.getElementById('loginForm').style.display = user ? 'none' : 'flex';
+            document.getElementById('loginTriggerBtn').style.display = user ? 'none' : 'inline-block';
             document.getElementById('logoutBtn').style.display = user ? 'block' : 'none';
+            if (user) closeLoginModal();
             render();
         });
 
