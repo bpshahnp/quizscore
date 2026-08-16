@@ -350,6 +350,125 @@
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
         }
 
+        /* Mobile one-round-at-a-time switcher (shown instead of the wide table on small screens) */
+        .round-switcher {
+            display: none;
+        }
+
+        .round-tabs {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding: 0.25rem 0.1rem 0.75rem;
+            margin-bottom: 1rem;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            border-bottom: 2px solid var(--border-gray);
+        }
+
+        .round-tab {
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid var(--border-gray);
+            color: var(--text-dark);
+            padding: 0.55rem 1rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            font-family: 'Poppins', sans-serif;
+            text-align: center;
+        }
+
+        .round-tab .round-tab-max {
+            display: block;
+            font-size: 0.68rem;
+            opacity: 0.75;
+            font-weight: 500;
+            margin-top: 1px;
+        }
+
+        .round-tab.active {
+            background: linear-gradient(135deg, var(--primary-blue), #2c5282);
+            color: white;
+            border-color: var(--primary-blue);
+            box-shadow: 0 4px 12px rgba(49, 130, 206, 0.4);
+        }
+
+        .round-groups-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .round-group-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid var(--border-gray);
+            border-radius: 12px;
+            padding: 0.85rem 1rem;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .round-group-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .round-group-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--text-dark);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .round-group-score {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: var(--primary-blue);
+            min-width: 2.4rem;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .round-group-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .round-group-controls .btn-score {
+            flex: 1;
+            padding: 0.7rem 0.4rem;
+            font-size: 0.95rem;
+        }
+
+        .round-empty-state {
+            text-align: center;
+            color: var(--text-light);
+            padding: 2.5rem 1rem;
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 768px) {
+            .table-container {
+                display: none;
+            }
+
+            .round-switcher {
+                display: block;
+            }
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -881,12 +1000,14 @@
             100% { background: transparent; transform: scale(1); }
         }
 
-        .score-value.flash-up {
+        .score-value.flash-up,
+        .flash-up {
             animation: scoreFlashUp 1.1s ease-out;
             border-radius: 8px;
         }
 
-        .score-value.flash-down {
+        .score-value.flash-down,
+        .flash-down {
             animation: scoreFlashDown 1.1s ease-out;
             border-radius: 8px;
         }
@@ -1020,6 +1141,11 @@
                     </div>
                     <div class="table-container">
                         <table id="scoreTable"></table>
+                    </div>
+                    <!-- Mobile view: one round at a time, all groups clearly listed, tap a tab to switch rounds -->
+                    <div class="round-switcher" id="roundSwitcher">
+                        <div class="round-tabs" id="roundTabs"></div>
+                        <div class="round-groups-list" id="roundGroupsList"></div>
                     </div>
                 </div>
             </div>
@@ -1465,6 +1591,7 @@
         function render() {
             renderStandings();
             renderScoreboard();
+            renderRoundSwitcher();
             renderRounds();
             renderGroups();
             updateUndoButton();
@@ -1538,6 +1665,60 @@
             
             html += '</tbody>';
             table.innerHTML = html;
+        }
+
+        // Mobile: one round at a time, all groups clearly listed, switch rounds by tapping a tab
+        let currentRoundIndex = 0;
+
+        function renderRoundSwitcher() {
+            const tabsEl = document.getElementById('roundTabs');
+            const listEl = document.getElementById('roundGroupsList');
+            if (!tabsEl || !listEl) return;
+
+            if (rounds.length === 0) {
+                tabsEl.innerHTML = '';
+                listEl.innerHTML = '<div class="round-empty-state">No rounds yet. Add one from Manage Rounds.</div>';
+                return;
+            }
+
+            if (currentRoundIndex >= rounds.length) currentRoundIndex = rounds.length - 1;
+            if (currentRoundIndex < 0) currentRoundIndex = 0;
+
+            tabsEl.innerHTML = rounds.map((r, i) => `
+                <button class="round-tab ${i === currentRoundIndex ? 'active' : ''}" onclick="selectRound(${i})">
+                    ${r.name}
+                    <span class="round-tab-max">Max ${r.max}</span>
+                </button>
+            `).join('');
+
+            const round = rounds[currentRoundIndex];
+            listEl.innerHTML = groups.map(g => {
+                const score = scores[g]?.[round.id] || 0;
+                const isChanged = lastChanged && lastChanged.group === g && lastChanged.roundId === round.id;
+                const flashClass = isChanged ? (lastChanged.direction === 'up' ? ' flash-up' : ' flash-down') : '';
+                return `
+                    <div class="round-group-card">
+                        <div class="round-group-top">
+                            <div class="round-group-name">${g}</div>
+                            <div class="round-group-score${flashClass}">${score}</div>
+                        </div>
+                        <div class="round-group-controls">
+                            <button class="btn-score btn-plus" onclick="updateScore('${g}', ${round.id}, 1)">+1</button>
+                            <button class="btn-score btn-plus" onclick="updateScore('${g}', ${round.id}, 5)">+5</button>
+                            <button class="btn-score btn-minus" onclick="updateScore('${g}', ${round.id}, -1)">-1</button>
+                            <button class="btn-score btn-minus" onclick="updateScore('${g}', ${round.id}, -5)">-5</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const activeTab = tabsEl.querySelector('.round-tab.active');
+            if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+
+        function selectRound(index) {
+            currentRoundIndex = index;
+            renderRoundSwitcher();
         }
 
         function renderRounds() {
