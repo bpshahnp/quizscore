@@ -1,8 +1,8 @@
 const SCHOOL_INFO = {
     name: "OM SHANTI ACADEMY",
     tagline: "An activity based school",
-    logoPath: "../assets/school_logo.png",
-    competitionTitle: "अन्तर टोल विकास संस्था महिला (आमा) समूह हाजिरी जवाफ प्रतियोगिता २०८२"
+    logoPath: "abc.png",
+    competitionTitle: "Inter-House Quiz Competition - 2083"
 };
 
 function loadCommonHeader() {
