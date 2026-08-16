@@ -152,6 +152,24 @@
             border-color: var(--primary-blue);
         }
 
+        /* Locked nav buttons (editing pages, shown when not signed in) */
+        .nav-button.nav-locked {
+            opacity: 0.55;
+            filter: grayscale(0.3);
+            position: relative;
+        }
+
+        .nav-button.nav-locked::after {
+            content: '🔒';
+            font-size: 0.85rem;
+            margin-left: 4px;
+        }
+
+        .nav-button.nav-locked:hover {
+            transform: none;
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
         .reset-button {
             background: linear-gradient(135deg, var(--primary-red), var(--dark-red));
             border: none;
@@ -691,6 +709,87 @@
             }
         }
 
+        /* Mobile hamburger navigation */
+        .nav-top-row {
+            display: contents; /* on desktop, hamburger/undo/reset sit as normal siblings of nav-grid */
+        }
+
+        .nav-hamburger {
+            display: none;
+            align-items: center;
+            gap: 0.6rem;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: var(--text-dark);
+            padding: 0.85rem 1.1rem;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            font-family: 'Poppins', sans-serif;
+            width: 100%;
+            text-align: left;
+        }
+
+        .nav-hamburger .hamburger-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+            transition: transform 0.25s ease;
+        }
+
+        .nav-hamburger[aria-expanded="true"] .hamburger-icon {
+            transform: rotate(90deg);
+        }
+
+        #hamburgerLabel {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 768px) {
+            .nav-wrapper {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+            }
+
+            .nav-top-row {
+                display: flex;
+                gap: 0.6rem;
+                align-items: center;
+                width: 100%;
+            }
+
+            .nav-hamburger {
+                display: flex;
+                flex: 1;
+            }
+
+            .undo-button,
+            .reset-button {
+                width: 48px;
+                height: 48px;
+                flex-shrink: 0;
+                margin: 0;
+            }
+
+            .nav-grid {
+                display: none;
+                grid-template-columns: 1fr !important;
+                width: 100%;
+                gap: 0.6rem;
+            }
+
+            .nav-grid.mobile-open {
+                display: grid;
+                animation: fadeIn 0.2s ease;
+            }
+        }
+
         /* Undo button (next to reset) */
         .undo-button {
             background: linear-gradient(135deg, #718096, #4a5568);
@@ -862,26 +961,32 @@
         </header>
 
         <div class="nav-wrapper">
-            <div class="nav-grid">
-                <button class="nav-button active" onclick="showPage('standings')">
+            <div class="nav-top-row">
+                <button class="nav-hamburger" id="navHamburger" onclick="toggleMobileNav()" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navGrid">
+                    <span class="hamburger-icon">☰</span>
+                    <span id="hamburgerLabel">📊 Live Standings</span>
+                </button>
+                <button class="undo-button" id="undoButton" onclick="undoLastScore()" title="No changes to undo" disabled>
+                    <span class="reset-icon">↩</span>
+                </button>
+                <button class="reset-button" onclick="resetSystem()" title="Reset All Data">
+                    <span class="reset-icon">↻</span>
+                </button>
+            </div>
+            <div class="nav-grid" id="navGrid">
+                <button class="nav-button active" data-page="standings" onclick="showPage('standings')">
                     📊 Live Standings
                 </button>
-                <button class="nav-button" onclick="showPage('scoreboard')">
+                <button class="nav-button" data-page="scoreboard" onclick="showPage('scoreboard')">
                     🎯 Scoreboard
                 </button>
-                <button class="nav-button" onclick="showPage('rounds')">
+                <button class="nav-button" data-page="rounds" onclick="showPage('rounds')">
                     ➕ Manage Rounds
                 </button>
-                <button class="nav-button" onclick="showPage('groups')">
+                <button class="nav-button" data-page="groups" onclick="showPage('groups')">
                     ✏️ Manage Groups
                 </button>
             </div>
-            <button class="undo-button" id="undoButton" onclick="undoLastScore()" title="No changes to undo" disabled>
-                <span class="reset-icon">↩</span>
-            </button>
-            <button class="reset-button" onclick="resetSystem()" title="Reset All Data">
-                <span class="reset-icon">↻</span>
-            </button>
         </div>
 
         <!-- Undo toast (appears after every score change) -->
@@ -1030,6 +1135,7 @@
             document.getElementById('loginTriggerBtn').style.display = user ? 'none' : 'inline-block';
             document.getElementById('logoutBtn').style.display = user ? 'block' : 'none';
             if (user) closeLoginModal();
+            enforcePageAccess();
             render();
         });
 
@@ -1108,13 +1214,84 @@
 
         // Navigation
         function showPage(pageName) {
+            // Scoreboard / Manage Rounds / Manage Groups are editing pages —
+            // keep them locked until the user signs in.
+            if (pageName !== 'standings' && !isEditor) {
+                openLoginModal();
+                return;
+            }
+
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.nav-button').forEach(b => b.classList.remove('active'));
             
             document.getElementById(pageName + 'Page').classList.add('active');
-            event.target.classList.add('active');
+            const navBtn = document.querySelector(`.nav-button[data-page="${pageName}"]`);
+            navBtn.classList.add('active');
+
+            // Reflect the current page on the mobile hamburger, then close the dropdown
+            const label = document.getElementById('hamburgerLabel');
+            if (label) label.textContent = navBtn.textContent.trim();
+            closeMobileNav();
             
             render();
+        }
+
+        // Mobile hamburger menu (Scoreboard / Manage Rounds / Manage Groups collapse under this on small screens)
+        function toggleMobileNav() {
+            const grid = document.getElementById('navGrid');
+            const hamburger = document.getElementById('navHamburger');
+            if (!grid || !hamburger) return;
+            const isOpen = grid.classList.toggle('mobile-open');
+            hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        }
+
+        function closeMobileNav() {
+            const grid = document.getElementById('navGrid');
+            const hamburger = document.getElementById('navHamburger');
+            if (grid) grid.classList.remove('mobile-open');
+            if (hamburger) hamburger.setAttribute('aria-expanded', 'false');
+        }
+
+        // Tapping anywhere outside the nav closes the mobile dropdown
+        document.addEventListener('click', (e) => {
+            const wrapper = document.querySelector('.nav-wrapper');
+            const grid = document.getElementById('navGrid');
+            if (grid && grid.classList.contains('mobile-open') && wrapper && !wrapper.contains(e.target)) {
+                closeMobileNav();
+            }
+        });
+
+        // Gray out + lock the editing-page nav buttons for anyone not signed in
+        function updateNavAccess() {
+            document.querySelectorAll('.nav-button[data-page]').forEach(btn => {
+                const page = btn.getAttribute('data-page');
+                const restricted = page !== 'standings';
+                if (restricted && !isEditor) {
+                    btn.classList.add('nav-locked');
+                    btn.setAttribute('aria-disabled', 'true');
+                    btn.title = 'Sign in to access';
+                } else {
+                    btn.classList.remove('nav-locked');
+                    btn.removeAttribute('aria-disabled');
+                    btn.removeAttribute('title');
+                }
+            });
+        }
+
+        // If someone signs out while viewing a restricted page, bounce them back to Live Standings
+        function enforcePageAccess() {
+            if (isEditor) return;
+            const activePage = document.querySelector('.page.active');
+            if (activePage && activePage.id !== 'standingsPage') {
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.querySelectorAll('.nav-button').forEach(b => b.classList.remove('active'));
+                document.getElementById('standingsPage').classList.add('active');
+                const standingsBtn = document.querySelector('.nav-button[data-page="standings"]');
+                standingsBtn.classList.add('active');
+                const label = document.getElementById('hamburgerLabel');
+                if (label) label.textContent = standingsBtn.textContent.trim();
+                closeMobileNav();
+            }
         }
 
         // Scoring
@@ -1291,6 +1468,7 @@
             renderRounds();
             renderGroups();
             updateUndoButton();
+            updateNavAccess();
         }
 
         function renderStandings() {
